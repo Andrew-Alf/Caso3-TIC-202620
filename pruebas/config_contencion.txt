@@ -1,0 +1,10 @@
+nu=3
+base=5
+ng=4
+tam1=2
+tam2=2
+procesadores=1
+memoria=2
+pagina=1048576
+almacenamiento=2
+bloque=1048576

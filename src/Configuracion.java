@@ -1,64 +1,65 @@
 import java.io.BufferedReader;
-import java.io.FileReader;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Lee el archivo de texto con los parametros del sistema (formato clave=valor).
- * Las lineas vacias y las que empiezan con # se ignoran.
- * Es inmutable: despues de cargarla solo se consulta, asi que no necesita sincronizacion.
- */
+/** Parametros de ejecucion cargados de un archivo clave=valor. */
 public class Configuracion {
-
-    private final int nu;             // numero de usuarios
-    private final int base;           // numero base de solicitudes por usuario
-    private final int ng;             // numero de gestores
-    private final int tam1;           // capacidad del buzon de entrada
-    private final int tam2;           // capacidad de la zona de espera (= umbral)
-    private final int procesadores;   // numero de procesadores
-    private final int memoria;        // memoria total en GiB
-    private final int pagina;         // tamano de pagina en KiB
-    private final int almacenamiento; // almacenamiento total en GiB
-    private final int bloque;         // tamano de bloque en KiB
+    private final int nu, base, ng, tam1, tam2, procesadores;
+    private final int memoria, pagina, almacenamiento, bloque;
 
     private Configuracion(Map<String, Integer> v) {
-        this.nu = v.get("nu");
-        this.base = v.get("base");
-        this.ng = v.get("ng");
-        this.tam1 = v.get("tam1");
-        this.tam2 = v.get("tam2");
-        this.procesadores = v.get("procesadores");
-        this.memoria = v.get("memoria");
-        this.pagina = v.get("pagina");
-        this.almacenamiento = v.get("almacenamiento");
-        this.bloque = v.get("bloque");
+        nu = v.get("nu");
+        base = v.get("base");
+        ng = v.get("ng");
+        tam1 = v.get("tam1");
+        tam2 = v.get("tam2");
+        procesadores = v.get("procesadores");
+        memoria = v.get("memoria");
+        pagina = v.get("pagina");
+        almacenamiento = v.get("almacenamiento");
+        bloque = v.get("bloque");
     }
 
     public static Configuracion cargar(String ruta) throws IOException {
         Map<String, Integer> valores = new HashMap<>();
-        try (BufferedReader br = new BufferedReader(new FileReader(ruta))) {
+        try (BufferedReader br = Files.newBufferedReader(Paths.get(ruta), StandardCharsets.UTF_8)) {
             String linea;
+            int numero = 0;
             while ((linea = br.readLine()) != null) {
+                numero++;
                 linea = linea.trim();
                 if (linea.isEmpty() || linea.startsWith("#")) continue;
-                String[] partes = linea.split("=");
-                if (partes.length != 2) {
-                    throw new IOException("Linea invalida en la configuracion: " + linea);
+                String[] partes = linea.split("=", -1);
+                if (partes.length != 2 || partes[0].trim().isEmpty()) {
+                    throw new IOException("Linea invalida " + numero + ": " + linea);
                 }
+                String clave = partes[0].trim();
                 try {
-                    valores.put(partes[0].trim(), Integer.parseInt(partes[1].trim()));
+                    int valor = Integer.parseInt(partes[1].trim());
+                    if (valores.putIfAbsent(clave, valor) != null) {
+                        throw new IOException("Parametro duplicado: " + clave);
+                    }
                 } catch (NumberFormatException e) {
-                    throw new IOException("Valor no numerico en la linea: " + linea);
+                    throw new IOException("Valor no entero para " + clave + " en linea " + numero, e);
                 }
             }
         }
         String[] requeridos = {"nu", "base", "ng", "tam1", "tam2", "procesadores",
-                               "memoria", "pagina", "almacenamiento", "bloque"};
+            "memoria", "pagina", "almacenamiento", "bloque"};
         for (String clave : requeridos) {
-            if (!valores.containsKey(clave)) {
-                throw new IOException("Falta el parametro '" + clave + "' en la configuracion");
-            }
+            Integer valor = valores.get(clave);
+            if (valor == null) throw new IOException("Falta el parametro " + clave);
+            if (valor <= 0) throw new IOException("El parametro " + clave + " debe ser positivo");
+        }
+        if ((long) valores.get("memoria") * 1048576L < valores.get("pagina")) {
+            throw new IOException("El tamano de pagina excede la memoria total");
+        }
+        if ((long) valores.get("almacenamiento") * 1048576L < valores.get("bloque")) {
+            throw new IOException("El tamano de bloque excede el almacenamiento total");
         }
         return new Configuracion(valores);
     }
@@ -73,4 +74,9 @@ public class Configuracion {
     public int getPagina() { return pagina; }
     public int getAlmacenamiento() { return almacenamiento; }
     public int getBloque() { return bloque; }
+    // Alias para compatibilidad con el diseno inicial.
+    public int getMemoriaGiB() { return memoria; }
+    public int getPaginaKiB() { return pagina; }
+    public int getAlmacenamientoGiB() { return almacenamiento; }
+    public int getBloqueKiB() { return bloque; }
 }

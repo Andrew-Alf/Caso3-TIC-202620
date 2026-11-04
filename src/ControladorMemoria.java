@@ -1,23 +1,57 @@
-/**
- * PERSONA 2: administra la memoria (paginas) del sistema.
- * Firma acordada: reservar(memoriaGiB, mv), liberar(mv), libres(), estaTodoLibre().
- */
+/** Administra paginas de memoria fisica y la MV propietaria de cada pagina. */
 public class ControladorMemoria {
-
-    private final int memoriaGiB;
+    private final MaquinaVirtual[] duenosPaginas;
     private final int paginaKiB;
+    private int cantidadLibres;
 
     public ControladorMemoria(int memoriaGiB, int paginaKiB) {
-        this.memoriaGiB = memoriaGiB;
+        if (memoriaGiB <= 0 || paginaKiB <= 0)
+            throw new IllegalArgumentException("Parametros de memoria invalidos");
         this.paginaKiB = paginaKiB;
+        long paginas = ((long) memoriaGiB * 1048576L) / paginaKiB;
+        if (paginas < 1 || paginas > Integer.MAX_VALUE)
+            throw new IllegalArgumentException("Cantidad de paginas no representable");
+        duenosPaginas = new MaquinaVirtual[(int) paginas];
+        cantidadLibres = (int) paginas;
     }
 
-    // TODO(Persona 2): mapa de paginas libres/asignadas
-    public synchronized boolean reservar(int gib, MaquinaVirtual mv) { return true; }
+    /** Redondea hacia arriba a paginas completas para no asignar menos de lo pedido. */
+    public int calcularPaginas(int memoriaGiB) {
+        if (memoriaGiB <= 0) throw new IllegalArgumentException("Memoria solicitada no positiva");
+        long kiB = (long) memoriaGiB * 1048576L;
+        long paginas = (kiB + paginaKiB - 1L) / paginaKiB;
+        if (paginas > Integer.MAX_VALUE) throw new IllegalArgumentException("Demasiadas paginas");
+        return (int) paginas;
+    }
 
-    public synchronized void liberar(MaquinaVirtual mv) { }
+    public synchronized boolean reservar(int gib, MaquinaVirtual mv) {
+        if (mv == null) throw new IllegalArgumentException("MV nula");
+        int requeridas = calcularPaginas(gib);
+        if (requeridas > cantidadLibres) return false;
+        int restantes = requeridas;
+        for (int i = 0; i < duenosPaginas.length && restantes > 0; i++) {
+            if (duenosPaginas[i] == null) {
+                duenosPaginas[i] = mv;
+                restantes--;
+            }
+        }
+        cantidadLibres -= requeridas;
+        return true;
+    }
 
-    public synchronized int libres() { return memoriaGiB; }
-
-    public synchronized boolean estaTodoLibre() { return true; }
+    public synchronized void liberar(MaquinaVirtual mv) {
+        for (int i = 0; i < duenosPaginas.length; i++) {
+            if (duenosPaginas[i] == mv) {
+                duenosPaginas[i] = null;
+                cantidadLibres++;
+            }
+        }
+    }
+    /** Numero de paginas libres. */
+    public synchronized int libres() { return cantidadLibres; }
+    public synchronized boolean estaTodoLibre() {
+        if (cantidadLibres != duenosPaginas.length) return false;
+        for (MaquinaVirtual dueno : duenosPaginas) if (dueno != null) return false;
+        return true;
+    }
 }

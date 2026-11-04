@@ -1,4 +1,4 @@
-
+# Configuracion de ejemplo para el Caso 3
 nu=3
 base=2
 ng=2

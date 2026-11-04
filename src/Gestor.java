@@ -1,62 +1,78 @@
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Thread gestor de solicitudes. Por cada solicitud del buzon crea una MV (thread) y la inicia.
- *
- * Antes de tomar cada solicitud consulta la zona de espera: si las MVs pendientes alcanzaron
- * el umbral, se bloquea hasta que TODAS las pendientes se procesen (espera total).
- */
+/** Thread consumidor que crea una MV por solicitud y respeta el umbral de espera. */
 public class Gestor extends Thread {
-
     private final int id;
     private final BuzonEntrada buzon;
     private final ZonaEspera zona;
-    private final ControladorProcesadores ctrlProcesadores;
-    private final ControladorMemoria ctrlMemoria;
-    private final ControladorAlmacenamiento ctrlAlmacenamiento;
-    private final List<MaquinaVirtual> maquinas = new ArrayList<>(); // solo la toca este thread
+    private final ControladorProcesadores cpu;
+    private final ControladorMemoria ram;
+    private final ControladorAlmacenamiento disco;
+    private final List<MaquinaVirtual> maquinas = new ArrayList<>();
 
     public Gestor(int id, BuzonEntrada buzon, ZonaEspera zona,
-                  ControladorProcesadores ctrlProcesadores,
-                  ControladorMemoria ctrlMemoria,
-                  ControladorAlmacenamiento ctrlAlmacenamiento) {
+            ControladorProcesadores cpu, ControladorMemoria ram,
+            ControladorAlmacenamiento disco) {
         super("Gestor-" + id);
         this.id = id;
         this.buzon = buzon;
         this.zona = zona;
-        this.ctrlProcesadores = ctrlProcesadores;
-        this.ctrlMemoria = ctrlMemoria;
-        this.ctrlAlmacenamiento = ctrlAlmacenamiento;
+        this.cpu = cpu;
+        this.ram = ram;
+        this.disco = disco;
     }
 
-    @Override
-    public void run() {
+    @Override public void run() {
         try {
             while (true) {
-                // 1. Revisar MVs pendientes. Si >= umbral, espera hasta que la zona quede vacia.
+                // Antes de CADA retiro, controlar las MVs pendientes.
                 zona.esperarSiSaturada();
-
-                // 2. Tomar la siguiente solicitud (espera semi-activa si el buzon esta vacio).
-                Solicitud s = buzon.retirar();
+                // Retiro NO bloqueante: no queda un gestor esperando una solicitud
+                // sin volver a consultar el umbral cuando llegue otra.
+                Solicitud s = buzon.intentarRetirar();
                 if (s == null) {
-                    break; // buzon vacio y sin usuarios activos: el gestor termina
+                    if (buzon.terminado()) break;
+                    Thread.yield(); // espera semi-activa fuera de monitores.
+                    continue;
                 }
-
-                // 3. Crear la MV y arrancarla.
-                MaquinaVirtual mv = new MaquinaVirtual(s, ctrlProcesadores, ctrlMemoria,
-                                                       ctrlAlmacenamiento, zona);
+                MaquinaVirtual mv = new MaquinaVirtual(s, cpu, ram, disco, zona);
                 maquinas.add(mv);
                 mv.start();
                 System.out.println("[Gestor " + id + "] creo MV para " + s.getId());
             }
-            // Antes de terminar espera a las MVs que el mismo creo.
-            for (MaquinaVirtual mv : maquinas) {
-                mv.join();
-            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            System.err.println("[Gestor " + id + "] interrumpido");
+        } finally {
+            // Espera la finalizacion de TODAS las MVs que creo. Maneja interrupcion
+            // sin dejar MVs abandonadas que harian fallar la validacion de Main.
+            boolean interrumpido = Thread.interrupted();
+            for (MaquinaVirtual mv : maquinas) {
+                boolean terminado = false;
+                while (!terminado) {
+                    try {
+                        mv.join();
+                        terminado = true;
+                    } catch (InterruptedException e) {
+                        interrumpido = true;
+                    }
+                }
+            }
+            if (interrumpido) Thread.currentThread().interrupt();
+            System.out.println("[Gestor " + id + "] termino (MVs creadas: " + maquinas.size() + ")");
         }
-        System.out.println("[Gestor " + id + "] termino");
+    }
+
+    public int getNumeroMaquinasCreadas() {
+        // Consultar solo DESPUES de join() del gestor.
+        return maquinas.size();
+    }
+
+    public int getNumeroMaquinasCompletadas() {
+        // Tras el join() del gestor, todas las MVs finalizaron.
+        int completas = 0;
+        for (MaquinaVirtual mv : maquinas) if (mv.ejecucionCompleta()) completas++;
+        return completas;
     }
 }

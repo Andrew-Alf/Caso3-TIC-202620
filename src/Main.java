@@ -1,49 +1,57 @@
 import java.io.IOException;
 
-/**
- * Crea los componentes, los conecta, arranca los threads y valida el estado final.
- * Uso: java Main [ruta_config]   (por defecto "config.txt")
- */
+/** Punto de entrada: inicializa el sistema, lanza threads y valida terminacion. */
 public class Main {
-
     public static void main(String[] args) throws InterruptedException {
         String ruta = args.length > 0 ? args[0] : "config.txt";
-        Configuracion cfg;
+        final Configuracion cfg;
         try {
             cfg = Configuracion.cargar(ruta);
         } catch (IOException e) {
-            System.err.println("Error leyendo la configuracion: " + e.getMessage());
+            System.err.println("Error leyendo configuracion: " + e.getMessage());
             return;
         }
-
         BuzonEntrada buzon = new BuzonEntrada(cfg.getTam1(), cfg.getNu());
         ZonaEspera zona = new ZonaEspera(cfg.getTam2());
-        ControladorProcesadores ctrlProc = new ControladorProcesadores(cfg.getProcesadores());
-        ControladorMemoria ctrlMem = new ControladorMemoria(cfg.getMemoria(), cfg.getPagina());
-        ControladorAlmacenamiento ctrlAlm =
+        ControladorProcesadores cpu = new ControladorProcesadores(cfg.getProcesadores());
+        ControladorMemoria ram = new ControladorMemoria(cfg.getMemoria(), cfg.getPagina());
+        ControladorAlmacenamiento disco =
                 new ControladorAlmacenamiento(cfg.getAlmacenamiento(), cfg.getBloque());
 
         Gestor[] gestores = new Gestor[cfg.getNg()];
-        for (int i = 0; i < gestores.length; i++) {
-            gestores[i] = new Gestor(i + 1, buzon, zona, ctrlProc, ctrlMem, ctrlAlm);
-        }
+        for (int i = 0; i < gestores.length; i++)
+            gestores[i] = new Gestor(i + 1, buzon, zona, cpu, ram, disco);
         Usuario[] usuarios = new Usuario[cfg.getNu()];
-        for (int i = 0; i < usuarios.length; i++) {
+        for (int i = 0; i < usuarios.length; i++)
             usuarios[i] = new Usuario(i + 1, cfg, buzon);
+
+        for (Gestor gestor : gestores) gestor.start();
+        for (Usuario usuario : usuarios) usuario.start();
+        for (Usuario usuario : usuarios) usuario.join();
+        for (Gestor gestor : gestores) gestor.join(); // Incluye join a todas sus MVs.
+
+        long esperado = (long) cfg.getBase() * cfg.getNu() * (cfg.getNu() + 1L) / 2L;
+        long creadas = 0;
+        long completadas = 0;
+        for (Gestor gestor : gestores) {
+            creadas += gestor.getNumeroMaquinasCreadas();
+            completadas += gestor.getNumeroMaquinasCompletadas();
         }
+        boolean correcto = creadas == completadas && buzon.estaVacio()
+                && buzon.getUsuariosActivos() == 0
+                && zona.pendientes() == 0 && cpu.estaTodoLibre()
+                && ram.estaTodoLibre() && disco.estaTodoLibre() && creadas == esperado;
 
-        for (Gestor g : gestores) g.start();
-        for (Usuario u : usuarios) u.start();
-
-        for (Usuario u : usuarios) u.join();
-        for (Gestor g : gestores) g.join(); // cada gestor espera a sus propias MVs
-
-        System.out.println("=== Validacion final ===");
+        System.out.println("\n=== VALIDACION FINAL ===");
+        System.out.println("Solicitudes esperadas / MVs creadas / MVs completadas: "
+                + esperado + " / " + creadas + " / " + completadas);
         System.out.println("Buzon vacio: " + buzon.estaVacio());
         System.out.println("Usuarios activos: " + buzon.getUsuariosActivos());
-        System.out.println("MVs pendientes en zona de espera: " + zona.pendientes());
-        System.out.println("Procesadores libres: " + ctrlProc.estaTodoLibre());
-        System.out.println("Memoria libre: " + ctrlMem.estaTodoLibre());
-        System.out.println("Almacenamiento libre: " + ctrlAlm.estaTodoLibre());
+        System.out.println("MVs pendientes: " + zona.pendientes());
+        System.out.println("Procesadores libres: " + cpu.libres() + "/" + cpu.getTotal());
+        System.out.println("Memoria completamente libre: " + ram.estaTodoLibre());
+        System.out.println("Almacenamiento completamente libre: " + disco.estaTodoLibre());
+        System.out.println("VALIDACION: " + (correcto ? "CORRECTA" : "FALLO"));
+        if (!correcto) throw new IllegalStateException("Error en la terminacion o asignacion");
     }
 }

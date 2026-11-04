@@ -1,21 +1,9 @@
-
+/** Prueba basica de lectura y objetos; la prueba real de concurrencia usa Main. */
 public class PruebaInicial {
-
     public static void main(String[] args) throws Exception {
-
-        Configuracion config =
-                Configuracion.cargar("config.txt");
-
-        System.out.println("=== CONFIGURACION ===");
-        System.out.println("Usuarios: " + config.getNu());
-        System.out.println("Gestores: " + config.getNg());
-        System.out.println("Capacidad buzon: "
-                + config.getTam1());
-
-        Solicitud solicitud =
-                new Solicitud("2-3", 2, 4, 8);
-
-        System.out.println("\n=== SOLICITUD ===");
-        System.out.println(solicitud);
+        Configuracion c = Configuracion.cargar("config.txt");
+        System.out.println("Usuarios: " + c.getNu() + " | Gestores: " + c.getNg()
+                + " | Buzon: " + c.getTam1());
+        System.out.println(new Solicitud("2-3", 2, 4, 8));
     }
 }

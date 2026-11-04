@@ -1,15 +1,19 @@
-# Contrato entre Persona 1 y Persona 2
+# Contrato de integracion (version implementada)
 
-Constructor que usa el Gestor:
-`new MaquinaVirtual(Solicitud, ControladorProcesadores, ControladorMemoria, ControladorAlmacenamiento, ZonaEspera)`
+Clases que extienden `Thread`: `Usuario`, `Gestor`, `MaquinaVirtual`.
 
-Solicitud (inmutable): `getId()`, `getProcesadores()`, `getMemoriaGiB()`, `getAlmacenamientoGiB()`.
+`Gestor` usa el constructor `new MaquinaVirtual(Solicitud, ControladorProcesadores, ControladorMemoria, ControladorAlmacenamiento, ZonaEspera)`.
 
-ZonaEspera (el Gestor solo usa):
-- `esperarSiSaturada()`: si pendientes >= umbral, bloquea hasta que pendientes == 0 (check y wait atomicos).
-- `pendientes()`: MVs dormidas ahora mismo.
-- Persona 2 debe hacer `notifyAll()` cuando pendientes llegue a 0.
+`Solicitud`: `getId()`, `getProcesadores()`, `getMemoriaGiB()`, `getAlmacenamientoGiB()`.
 
-Controladores (cada uno): `boolean reservar(cantidad, mv)`, `void liberar(mv)`, `int libres()`, `boolean estaTodoLibre()`.
+`BuzonEntrada`: `depositar(Solicitud)` (espera pasiva), `intentarRetirar()` (no bloqueante), `terminado()`, `usuarioTermino()`.
 
-Main (validacion final) usa `estaTodoLibre()` de los tres controladores y `zona.pendientes()`.
+`ZonaEspera`: `esperarSiSaturada()` (gestor), `registrarPendiente(mv)`, `completarPendiente(mv)`, `esperarCambio()` y `notificarLiberacion()`.
+
+Los tres controladores: `reservar(cantidad, mv)`, `liberar(mv)`, `libres()`, `estaTodoLibre()`; memoria y almacenamiento traducen GiB a paginas/bloques.
+
+`Main`: lanza y espera los threads y valida contador de MVs, buzón, zona y recursos. Los gestores esperan a las MVs que crearon.
+
+**Regla clave:** las MVs mantienen el monitor de `ZonaEspera` entre el intento de reserva y su `wait()`, evitando notificaciones perdidas. Los controladores nunca invocan a ZonaEspera mientras conservan su propio monitor. Se evita la retencion circular de monitores.
+
+**Interpretacion de tam2:** umbral de MVs pendientes que detiene nuevas admisiones por parte de los gestores hasta el vaciado de la zona. El diagrama del enunciado presenta una zona ilimitada con umbral; en la lista de parametros tam2 aparece como capacidad. Documentar esta interpretacion.
